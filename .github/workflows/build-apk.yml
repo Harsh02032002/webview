@@ -32,8 +32,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@v4
@@ -55,7 +56,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
 
-      - name: Rename APK for easy download
+      - name: Prepare APK Artifact
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk ./RoomForStay-release.apk
 
