@@ -1,17 +1,30 @@
 {
   "expo": {
-    "name": "webview",
-    "slug": "webview",
+    "name": "RoomForStay",
+    "slug": "roomforstay",
+    "scheme": "roomforstay",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F2547"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.roomforstay.app"
     },
     "android": {
+      "package": "com.roomforstay.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F2547",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +33,31 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0F2547",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180
+        }
+      ],
+      [
+        "expo-status-bar",
+        {
+          "backgroundColor": "#0F2547",
+          "style": "light"
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "backgroundColor": "#FFFFFF",
+          "barStyle": "dark"
+        }
+      ]
+    ]
   }
 }

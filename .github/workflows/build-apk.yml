@@ -1,0 +1,68 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-android-apk:
+    name: Build RoomForStay Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Run TypeScript & Lint Checks
+        run: |
+          npx tsc --noEmit
+          npx expo lint
+
+      - name: Generate Native Android Project (Expo Prebuild)
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build Android Release APK
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+
+      - name: Rename APK for easy download
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk ./RoomForStay-release.apk
+
+      - name: Upload RoomForStay APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoomForStay-Android-APK
+          path: ./RoomForStay-release.apk
+          if-no-files-found: error
+          retention-days: 30
