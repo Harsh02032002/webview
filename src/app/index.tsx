@@ -8,6 +8,7 @@ import {
   Image,
   Animated,
   ActivityIndicator,
+  Alert,
   Linking,
   useWindowDimensions,
 } from 'react-native';
@@ -28,7 +29,7 @@ export default function WelcomeScreen() {
   const [translateYAnim] = useState(() => new Animated.Value(18));
 
   const [statusText, setStatusText] = useState<string>(
-    'Checking Internet & requesting Location permission...'
+    'Checking Internet & Location permission...'
   );
   const [isCheckingPermissions, setIsCheckingPermissions] = useState<boolean>(true);
   const [locationGranted, setLocationGranted] = useState<boolean>(false);
@@ -50,7 +51,7 @@ export default function WelcomeScreen() {
 
     let isMounted = true;
 
-    async function initPermissionsAndOpen() {
+    async function initPermissions() {
       try {
         // 1. Check Internet Connection
         const netState = await Network.getNetworkStateAsync();
@@ -59,42 +60,68 @@ export default function WelcomeScreen() {
         if (!isMounted) return;
         setInternetConnected(isOnline);
 
-        // 2. Request Location Permission (Android native runtime popup)
+        // 2. Request Location Permission on screen open
         const { status } = await Location.requestForegroundPermissionsAsync();
         const hasLocation = status === 'granted';
         if (!isMounted) return;
         setLocationGranted(hasLocation);
         setIsCheckingPermissions(false);
 
-        if (isOnline) {
-          setStatusText('Permissions ready! Opening RoomForStay...');
-          // Automatically open website in browser and in-app WebView
-          Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
-          router.replace('/stay');
+        if (!isOnline) {
+          setStatusText('No internet connection. Please turn on mobile data or Wi-Fi.');
+        } else if (hasLocation) {
+          setStatusText('Internet & Location ready! Tap Next below to open RoomForStay.');
         } else {
-          setStatusText('No internet connection detected. Please check your network.');
+          setStatusText('Internet ready. Tap Next below to allow location & continue.');
         }
       } catch {
         if (!isMounted) return;
         setIsCheckingPermissions(false);
-        Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
-        router.replace('/stay');
+        setStatusText('Tap Next below to open RoomForStay.');
       }
     }
 
-    initPermissionsAndOpen();
+    initPermissions();
 
     return () => {
       isMounted = false;
     };
   }, [fadeAnim, translateYAnim]);
 
-  const handleExplorePress = async () => {
-    if (!locationGranted) {
-      await Location.requestForegroundPermissionsAsync().catch(() => {});
+  const handleNextPress = async () => {
+    setIsCheckingPermissions(true);
+    try {
+      // Check internet before opening
+      const netState = await Network.getNetworkStateAsync();
+      const isOnline =
+        netState.isConnected !== false && netState.isInternetReachable !== false;
+      setInternetConnected(isOnline);
+
+      if (!isOnline) {
+        setIsCheckingPermissions(false);
+        Alert.alert(
+          'Internet Required',
+          'Please connect to the internet to open RoomForStay (https://www.roomforstay.com/).'
+        );
+        return;
+      }
+
+      // Ask location permission if not yet granted
+      if (!locationGranted) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        setLocationGranted(status === 'granted');
+      }
+
+      setIsCheckingPermissions(false);
+
+      // Open https://www.roomforstay.com/ in the WebView and external browser
+      router.push('/stay');
+      Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
+    } catch {
+      setIsCheckingPermissions(false);
+      router.push('/stay');
+      Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
     }
-    Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
-    router.push('/stay');
   };
 
   return (
@@ -104,6 +131,7 @@ export default function WelcomeScreen() {
         <View style={styles.topAccentGoldLine} />
       </View>
 
+      {/* Main Scrollable Content */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
@@ -131,7 +159,7 @@ export default function WelcomeScreen() {
             </View>
           </View>
 
-          {/* Permission & Auto-Launch Status Banner */}
+          {/* Permission Status Banner */}
           <View style={styles.permissionBanner}>
             {isCheckingPermissions ? (
               <ActivityIndicator size="small" color={COLORS.goldPrimary} />
@@ -144,7 +172,7 @@ export default function WelcomeScreen() {
             )}
             <View style={styles.permissionBannerTextWrap}>
               <Text style={styles.permissionBannerTitle}>
-                Internet & Location Access
+                Internet & Location Status
               </Text>
               <Text style={styles.permissionBannerSubtitle}>{statusText}</Text>
             </View>
@@ -180,29 +208,36 @@ export default function WelcomeScreen() {
               <FeatureCard key={feature.id} feature={feature} />
             ))}
           </View>
-
-          {/* Primary CTA Area */}
-          <View style={styles.ctaContainer}>
-            <TouchableOpacity
-              style={styles.primaryCtaButton}
-              activeOpacity={0.88}
-              onPress={handleExplorePress}
-              accessibilityRole="button"
-              accessibilityLabel={BRAND_CONFIG.primaryCta}
-            >
-              <Text style={styles.primaryCtaText}>{BRAND_CONFIG.primaryCta}</Text>
-              <View style={styles.ctaArrowCircle}>
-                <Ionicons name="arrow-forward" size={18} color={COLORS.navyPrimary} />
-              </View>
-            </TouchableOpacity>
-
-            <View style={styles.secondaryFooterRow}>
-              <Ionicons name="location-outline" size={14} color={COLORS.goldPrimary} />
-              <Text style={styles.secondaryText}>{BRAND_CONFIG.secondaryText}</Text>
-            </View>
-          </View>
         </Animated.View>
       </ScrollView>
+
+      {/* Pinned Sticky Bottom Bar - Always Visible Without Scrolling */}
+      <View style={styles.stickyBottomBar}>
+        <TouchableOpacity
+          style={styles.primaryCtaButton}
+          activeOpacity={0.88}
+          onPress={handleNextPress}
+          accessibilityRole="button"
+          accessibilityLabel="Next - Explore RoomForStay"
+        >
+          <View style={styles.ctaTextColumn}>
+            <Text style={styles.primaryCtaText}>
+              Next — {BRAND_CONFIG.primaryCta}
+            </Text>
+            <Text style={styles.primaryCtaSubtext}>
+              Opens www.roomforstay.com
+            </Text>
+          </View>
+          <View style={styles.ctaArrowCircle}>
+            <Ionicons name="arrow-forward" size={20} color={COLORS.navyPrimary} />
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.secondaryFooterRow}>
+          <Ionicons name="location-outline" size={13} color={COLORS.goldPrimary} />
+          <Text style={styles.secondaryText}>{BRAND_CONFIG.secondaryText}</Text>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -226,12 +261,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 32,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   scrollContentTablet: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 24,
   },
   contentWrapper: {
     width: '100%',
@@ -267,9 +302,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.goldBorder,
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
-    marginBottom: 16,
+    marginBottom: 14,
     gap: 12,
   },
   permissionBannerTextWrap: {
@@ -287,13 +322,13 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     width: '100%',
-    height: 195,
+    height: 175,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: COLORS.navyPrimary,
     borderWidth: 1.5,
     borderColor: COLORS.goldBorder,
-    marginBottom: 22,
+    marginBottom: 18,
     shadowColor: COLORS.navyDark,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.14,
@@ -325,76 +360,97 @@ const styles = StyleSheet.create({
     letterSpacing: 0.9,
   },
   copySection: {
-    marginBottom: 22,
+    marginBottom: 18,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     color: COLORS.navyPrimary,
     letterSpacing: 0.2,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: COLORS.goldPrimary,
-    lineHeight: 22,
-    marginBottom: 12,
+    lineHeight: 21,
+    marginBottom: 10,
   },
   goldDivider: {
     width: 52,
     height: 3,
     borderRadius: 2,
     backgroundColor: COLORS.goldBright,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   description: {
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 21,
     color: COLORS.textSecondary,
   },
   featuresSection: {
-    marginBottom: 20,
+    marginBottom: 8,
   },
   sectionHeader: {
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.textMuted,
     letterSpacing: 1.2,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  ctaContainer: {
-    marginTop: 4,
+  stickyBottomBar: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
     alignItems: 'center',
+    shadowColor: COLORS.navyDark,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 10,
   },
   primaryCtaButton: {
     width: '100%',
+    maxWidth: 560,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: COLORS.navyPrimary,
     borderRadius: 16,
-    paddingVertical: 16,
-    paddingLeft: 24,
-    paddingRight: 16,
+    paddingVertical: 14,
+    paddingLeft: 20,
+    paddingRight: 14,
     borderWidth: 1.5,
     borderColor: COLORS.goldBright,
     shadowColor: COLORS.navyDark,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
-    shadowRadius: 12,
+    shadowRadius: 10,
     elevation: 6,
+  },
+  ctaTextColumn: {
+    flex: 1,
+    paddingRight: 10,
   },
   primaryCtaText: {
     color: COLORS.white,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+  },
+  primaryCtaSubtext: {
+    color: COLORS.goldBright,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   ctaArrowCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.goldBright,
     alignItems: 'center',
     justifyContent: 'center',
@@ -402,11 +458,11 @@ const styles = StyleSheet.create({
   secondaryFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 14,
-    gap: 6,
+    marginTop: 8,
+    gap: 5,
   },
   secondaryText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: COLORS.textMuted,
   },
