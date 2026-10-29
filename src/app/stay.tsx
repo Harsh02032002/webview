@@ -198,6 +198,7 @@ export default function StayWebViewScreen() {
           style={styles.webView}
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          geolocationEnabled={true}
           sharedCookiesEnabled={true}
           thirdPartyCookiesEnabled={true}
           allowsBackForwardNavigationGestures={true}

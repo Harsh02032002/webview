@@ -7,10 +7,14 @@ import {
   TouchableOpacity,
   Image,
   Animated,
+  ActivityIndicator,
+  Linking,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
+import * as Network from 'expo-network';
 import { Ionicons } from '@expo/vector-icons';
 import { BRAND_CONFIG, COLORS, FEATURE_HIGHLIGHTS } from '../constants/theme';
 import { BrandHeader } from '../components/BrandHeader';
@@ -23,22 +27,73 @@ export default function WelcomeScreen() {
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [translateYAnim] = useState(() => new Animated.Value(18));
 
+  const [statusText, setStatusText] = useState<string>(
+    'Checking Internet & requesting Location permission...'
+  );
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState<boolean>(true);
+  const [locationGranted, setLocationGranted] = useState<boolean>(false);
+  const [internetConnected, setInternetConnected] = useState<boolean>(true);
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 520,
+        duration: 450,
         useNativeDriver: true,
       }),
       Animated.timing(translateYAnim, {
         toValue: 0,
-        duration: 520,
+        duration: 450,
         useNativeDriver: true,
       }),
     ]).start();
+
+    let isMounted = true;
+
+    async function initPermissionsAndOpen() {
+      try {
+        // 1. Check Internet Connection
+        const netState = await Network.getNetworkStateAsync();
+        const isOnline =
+          netState.isConnected !== false && netState.isInternetReachable !== false;
+        if (!isMounted) return;
+        setInternetConnected(isOnline);
+
+        // 2. Request Location Permission (Android native runtime popup)
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        const hasLocation = status === 'granted';
+        if (!isMounted) return;
+        setLocationGranted(hasLocation);
+        setIsCheckingPermissions(false);
+
+        if (isOnline) {
+          setStatusText('Permissions ready! Opening RoomForStay...');
+          // Automatically open website in browser and in-app WebView
+          Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
+          router.replace('/stay');
+        } else {
+          setStatusText('No internet connection detected. Please check your network.');
+        }
+      } catch {
+        if (!isMounted) return;
+        setIsCheckingPermissions(false);
+        Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
+        router.replace('/stay');
+      }
+    }
+
+    initPermissionsAndOpen();
+
+    return () => {
+      isMounted = false;
+    };
   }, [fadeAnim, translateYAnim]);
 
-  const handleExplorePress = () => {
+  const handleExplorePress = async () => {
+    if (!locationGranted) {
+      await Location.requestForegroundPermissionsAsync().catch(() => {});
+    }
+    Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
     router.push('/stay');
   };
 
@@ -73,6 +128,25 @@ export default function WelcomeScreen() {
             <View style={styles.verifiedBadge}>
               <Ionicons name="star" size={12} color={COLORS.goldPrimary} />
               <Text style={styles.verifiedBadgeText}>OFFICIAL APP</Text>
+            </View>
+          </View>
+
+          {/* Permission & Auto-Launch Status Banner */}
+          <View style={styles.permissionBanner}>
+            {isCheckingPermissions ? (
+              <ActivityIndicator size="small" color={COLORS.goldPrimary} />
+            ) : (
+              <Ionicons
+                name={internetConnected ? 'checkmark-circle' : 'alert-circle'}
+                size={20}
+                color={internetConnected ? COLORS.goldPrimary : COLORS.error}
+              />
+            )}
+            <View style={styles.permissionBannerTextWrap}>
+              <Text style={styles.permissionBannerTitle}>
+                Internet & Location Access
+              </Text>
+              <Text style={styles.permissionBannerSubtitle}>{statusText}</Text>
             </View>
           </View>
 
@@ -123,7 +197,7 @@ export default function WelcomeScreen() {
             </TouchableOpacity>
 
             <View style={styles.secondaryFooterRow}>
-              <Ionicons name="lock-closed-outline" size={13} color={COLORS.goldPrimary} />
+              <Ionicons name="location-outline" size={14} color={COLORS.goldPrimary} />
               <Text style={styles.secondaryText}>{BRAND_CONFIG.secondaryText}</Text>
             </View>
           </View>
@@ -167,7 +241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 14,
   },
   verifiedBadge: {
     flexDirection: 'row',
@@ -185,6 +259,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.navyPrimary,
     letterSpacing: 0.8,
+  },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.goldLight,
+    borderWidth: 1,
+    borderColor: COLORS.goldBorder,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    gap: 12,
+  },
+  permissionBannerTextWrap: {
+    flex: 1,
+  },
+  permissionBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.navyPrimary,
+    marginBottom: 2,
+  },
+  permissionBannerSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
   },
   heroCard: {
     width: '100%',
