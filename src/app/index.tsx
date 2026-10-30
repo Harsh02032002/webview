@@ -15,7 +15,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import * as Network from 'expo-network';
 import { Ionicons } from '@expo/vector-icons';
 import { BRAND_CONFIG, COLORS, FEATURE_HIGHLIGHTS } from '../constants/theme';
@@ -31,8 +30,16 @@ export default function WelcomeScreen() {
 
   const [isCheckingInternet, setIsCheckingInternet] = useState<boolean>(true);
   const [internetConnected, setInternetConnected] = useState<boolean>(false);
-  const hasOpenedSiteRef = useRef<boolean>(false);
+  const hasOpenedBrowserRef = useRef<boolean>(false);
   const alertShownRef = useRef<boolean>(false);
+
+  const openWebsiteInBrowser = useCallback(async () => {
+    try {
+      await Linking.openURL(BRAND_CONFIG.websiteUrl);
+    } catch {
+      Alert.alert('Error', 'Could not open browser for https://www.roomforstay.com/');
+    }
+  }, []);
 
   const openInternetSettings = useCallback(() => {
     if (Platform.OS === 'android') {
@@ -49,7 +56,7 @@ export default function WelcomeScreen() {
     alertShownRef.current = true;
     Alert.alert(
       'Internet Required',
-      'Internet connection is off. Please allow / turn on Mobile Data or Wi-Fi to open RoomForStay.',
+      'Internet connection is off. Please turn on Mobile Data or Wi-Fi to open RoomForStay (https://www.roomforstay.com/).',
       [
         {
           text: 'Turn On Internet',
@@ -87,7 +94,7 @@ export default function WelcomeScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    async function verifyInternetAndOpen() {
+    async function verifyInternetAndLaunchBrowser() {
       try {
         const netState = await Network.getNetworkStateAsync();
         const isOnline =
@@ -98,9 +105,9 @@ export default function WelcomeScreen() {
         setIsCheckingInternet(false);
 
         if (isOnline) {
-          if (!hasOpenedSiteRef.current) {
-            hasOpenedSiteRef.current = true;
-            router.replace('/stay');
+          if (!hasOpenedBrowserRef.current) {
+            hasOpenedBrowserRef.current = true;
+            await openWebsiteInBrowser();
           }
         } else {
           promptTurnOnInternet();
@@ -111,20 +118,20 @@ export default function WelcomeScreen() {
       }
     }
 
-    // Initial check on app launch
-    verifyInternetAndOpen();
+    // Check immediately when app opens
+    verifyInternetAndLaunchBrowser();
 
-    // Poll every 2 seconds while internet is off so as soon as user turns on internet, site opens automatically
+    // Keep checking every 2 seconds while internet is off; as soon as user turns internet ON, open browser automatically
     const interval = setInterval(() => {
-      if (!hasOpenedSiteRef.current) {
-        verifyInternetAndOpen();
+      if (!hasOpenedBrowserRef.current) {
+        verifyInternetAndLaunchBrowser();
       }
     }, 2000);
 
-    // Also re-check immediately when user returns from Android Wi-Fi / Data settings
+    // Also re-check when returning from settings
     const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && !hasOpenedSiteRef.current) {
-        verifyInternetAndOpen();
+      if (nextState === 'active' && !hasOpenedBrowserRef.current) {
+        verifyInternetAndLaunchBrowser();
       }
     });
 
@@ -133,9 +140,9 @@ export default function WelcomeScreen() {
       clearInterval(interval);
       appStateSub.remove();
     };
-  }, [promptTurnOnInternet]);
+  }, [openWebsiteInBrowser, promptTurnOnInternet]);
 
-  const handleManualAction = async () => {
+  const handleOpenBrowserPress = async () => {
     setIsCheckingInternet(true);
     try {
       const netState = await Network.getNetworkStateAsync();
@@ -145,14 +152,14 @@ export default function WelcomeScreen() {
       setIsCheckingInternet(false);
 
       if (isOnline) {
-        hasOpenedSiteRef.current = true;
-        router.replace('/stay');
+        hasOpenedBrowserRef.current = true;
+        await openWebsiteInBrowser();
       } else {
         promptTurnOnInternet();
       }
     } catch {
       setIsCheckingInternet(false);
-      router.replace('/stay');
+      await openWebsiteInBrowser();
     }
   };
 
@@ -204,13 +211,13 @@ export default function WelcomeScreen() {
             <View style={styles.permissionBannerTextWrap}>
               <Text style={styles.permissionBannerTitle}>
                 {internetConnected
-                  ? 'Internet Connected — Opening RoomForStay...'
+                  ? 'Internet Connected — Opening in Browser...'
                   : 'Internet Off — Please Turn On Internet'}
               </Text>
               <Text style={styles.permissionBannerSubtitle}>
                 {internetConnected
-                  ? 'Redirecting automatically to www.roomforstay.com'
-                  : 'Waiting for Mobile Data or Wi-Fi connection. Site will open automatically once connected.'}
+                  ? 'Opening https://www.roomforstay.com/ in your browser'
+                  : 'Turn on Mobile Data or Wi-Fi. Website will open in browser automatically.'}
               </Text>
             </View>
           </View>
@@ -253,25 +260,23 @@ export default function WelcomeScreen() {
         <TouchableOpacity
           style={styles.primaryCtaButton}
           activeOpacity={0.88}
-          onPress={handleManualAction}
+          onPress={handleOpenBrowserPress}
           accessibilityRole="button"
           accessibilityLabel={BRAND_CONFIG.primaryCta}
         >
           <View style={styles.ctaTextColumn}>
             <Text style={styles.primaryCtaText}>
               {internetConnected
-                ? BRAND_CONFIG.primaryCta
+                ? 'Open RoomForStay in Browser'
                 : 'Turn On Internet / Retry'}
             </Text>
             <Text style={styles.primaryCtaSubtext}>
-              {internetConnected
-                ? 'Opening www.roomforstay.com...'
-                : 'Tap to enable internet & open RoomForStay'}
+              https://www.roomforstay.com/
             </Text>
           </View>
           <View style={styles.ctaArrowCircle}>
             <Ionicons
-              name={internetConnected ? 'arrow-forward' : 'wifi-outline'}
+              name={internetConnected ? 'open-outline' : 'wifi-outline'}
               size={20}
               color={COLORS.navyPrimary}
             />
