@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,12 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
+  AppState,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 import { Ionicons } from '@expo/vector-icons';
 import { BRAND_CONFIG, COLORS, FEATURE_HIGHLIGHTS } from '../constants/theme';
@@ -28,99 +29,130 @@ export default function WelcomeScreen() {
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [translateYAnim] = useState(() => new Animated.Value(18));
 
-  const [statusText, setStatusText] = useState<string>(
-    'Checking Internet & Location permission...'
-  );
-  const [isCheckingPermissions, setIsCheckingPermissions] = useState<boolean>(true);
-  const [locationGranted, setLocationGranted] = useState<boolean>(false);
-  const [internetConnected, setInternetConnected] = useState<boolean>(true);
+  const [isCheckingInternet, setIsCheckingInternet] = useState<boolean>(true);
+  const [internetConnected, setInternetConnected] = useState<boolean>(false);
+  const hasOpenedSiteRef = useRef<boolean>(false);
+  const alertShownRef = useRef<boolean>(false);
+
+  const openInternetSettings = useCallback(() => {
+    if (Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.WIRELESS_SETTINGS').catch(() => {
+        Linking.openSettings().catch(() => {});
+      });
+    } else {
+      Linking.openSettings().catch(() => {});
+    }
+  }, []);
+
+  const promptTurnOnInternet = useCallback(() => {
+    if (alertShownRef.current) return;
+    alertShownRef.current = true;
+    Alert.alert(
+      'Internet Required',
+      'Internet connection is off. Please allow / turn on Mobile Data or Wi-Fi to open RoomForStay.',
+      [
+        {
+          text: 'Turn On Internet',
+          onPress: () => {
+            alertShownRef.current = false;
+            openInternetSettings();
+          },
+        },
+        {
+          text: 'Retry',
+          onPress: () => {
+            alertShownRef.current = false;
+          },
+        },
+      ],
+      { cancelable: false }
+    );
+  }, [openInternetSettings]);
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 450,
+        duration: 400,
         useNativeDriver: true,
       }),
       Animated.timing(translateYAnim, {
         toValue: 0,
-        duration: 450,
+        duration: 400,
         useNativeDriver: true,
       }),
     ]).start();
+  }, [fadeAnim, translateYAnim]);
 
+  useEffect(() => {
     let isMounted = true;
 
-    async function initPermissions() {
+    async function verifyInternetAndOpen() {
       try {
-        // 1. Check Internet Connection
         const netState = await Network.getNetworkStateAsync();
         const isOnline =
-          netState.isConnected !== false && netState.isInternetReachable !== false;
+          netState.isConnected === true && netState.isInternetReachable !== false;
+
         if (!isMounted) return;
         setInternetConnected(isOnline);
+        setIsCheckingInternet(false);
 
-        // 2. Request Location Permission on screen open
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        const hasLocation = status === 'granted';
-        if (!isMounted) return;
-        setLocationGranted(hasLocation);
-        setIsCheckingPermissions(false);
-
-        if (!isOnline) {
-          setStatusText('No internet connection. Please turn on mobile data or Wi-Fi.');
-        } else if (hasLocation) {
-          setStatusText('Internet & Location ready! Tap Next below to open RoomForStay.');
+        if (isOnline) {
+          if (!hasOpenedSiteRef.current) {
+            hasOpenedSiteRef.current = true;
+            router.replace('/stay');
+          }
         } else {
-          setStatusText('Internet ready. Tap Next below to allow location & continue.');
+          promptTurnOnInternet();
         }
       } catch {
         if (!isMounted) return;
-        setIsCheckingPermissions(false);
-        setStatusText('Tap Next below to open RoomForStay.');
+        setIsCheckingInternet(false);
       }
     }
 
-    initPermissions();
+    // Initial check on app launch
+    verifyInternetAndOpen();
+
+    // Poll every 2 seconds while internet is off so as soon as user turns on internet, site opens automatically
+    const interval = setInterval(() => {
+      if (!hasOpenedSiteRef.current) {
+        verifyInternetAndOpen();
+      }
+    }, 2000);
+
+    // Also re-check immediately when user returns from Android Wi-Fi / Data settings
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && !hasOpenedSiteRef.current) {
+        verifyInternetAndOpen();
+      }
+    });
 
     return () => {
       isMounted = false;
+      clearInterval(interval);
+      appStateSub.remove();
     };
-  }, [fadeAnim, translateYAnim]);
+  }, [promptTurnOnInternet]);
 
-  const handleNextPress = async () => {
-    setIsCheckingPermissions(true);
+  const handleManualAction = async () => {
+    setIsCheckingInternet(true);
     try {
-      // Check internet before opening
       const netState = await Network.getNetworkStateAsync();
       const isOnline =
-        netState.isConnected !== false && netState.isInternetReachable !== false;
+        netState.isConnected === true && netState.isInternetReachable !== false;
       setInternetConnected(isOnline);
+      setIsCheckingInternet(false);
 
-      if (!isOnline) {
-        setIsCheckingPermissions(false);
-        Alert.alert(
-          'Internet Required',
-          'Please connect to the internet to open RoomForStay (https://www.roomforstay.com/).'
-        );
-        return;
+      if (isOnline) {
+        hasOpenedSiteRef.current = true;
+        router.replace('/stay');
+      } else {
+        promptTurnOnInternet();
       }
-
-      // Ask location permission if not yet granted
-      if (!locationGranted) {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        setLocationGranted(status === 'granted');
-      }
-
-      setIsCheckingPermissions(false);
-
-      // Open https://www.roomforstay.com/ in the WebView and external browser
-      router.push('/stay');
-      Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
     } catch {
-      setIsCheckingPermissions(false);
-      router.push('/stay');
-      Linking.openURL(BRAND_CONFIG.websiteUrl).catch(() => {});
+      setIsCheckingInternet(false);
+      router.replace('/stay');
     }
   };
 
@@ -131,7 +163,6 @@ export default function WelcomeScreen() {
         <View style={styles.topAccentGoldLine} />
       </View>
 
-      {/* Main Scrollable Content */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
@@ -159,22 +190,28 @@ export default function WelcomeScreen() {
             </View>
           </View>
 
-          {/* Permission Status Banner */}
+          {/* Internet Status Banner */}
           <View style={styles.permissionBanner}>
-            {isCheckingPermissions ? (
+            {isCheckingInternet ? (
               <ActivityIndicator size="small" color={COLORS.goldPrimary} />
             ) : (
               <Ionicons
-                name={internetConnected ? 'checkmark-circle' : 'alert-circle'}
+                name={internetConnected ? 'wifi' : 'cloud-offline-outline'}
                 size={20}
                 color={internetConnected ? COLORS.goldPrimary : COLORS.error}
               />
             )}
             <View style={styles.permissionBannerTextWrap}>
               <Text style={styles.permissionBannerTitle}>
-                Internet & Location Status
+                {internetConnected
+                  ? 'Internet Connected — Opening RoomForStay...'
+                  : 'Internet Off — Please Turn On Internet'}
               </Text>
-              <Text style={styles.permissionBannerSubtitle}>{statusText}</Text>
+              <Text style={styles.permissionBannerSubtitle}>
+                {internetConnected
+                  ? 'Redirecting automatically to www.roomforstay.com'
+                  : 'Waiting for Mobile Data or Wi-Fi connection. Site will open automatically once connected.'}
+              </Text>
             </View>
           </View>
 
@@ -211,30 +248,38 @@ export default function WelcomeScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* Pinned Sticky Bottom Bar - Always Visible Without Scrolling */}
+      {/* Sticky Bottom Action Bar */}
       <View style={styles.stickyBottomBar}>
         <TouchableOpacity
           style={styles.primaryCtaButton}
           activeOpacity={0.88}
-          onPress={handleNextPress}
+          onPress={handleManualAction}
           accessibilityRole="button"
-          accessibilityLabel="Next - Explore RoomForStay"
+          accessibilityLabel={BRAND_CONFIG.primaryCta}
         >
           <View style={styles.ctaTextColumn}>
             <Text style={styles.primaryCtaText}>
-              Next — {BRAND_CONFIG.primaryCta}
+              {internetConnected
+                ? BRAND_CONFIG.primaryCta
+                : 'Turn On Internet / Retry'}
             </Text>
             <Text style={styles.primaryCtaSubtext}>
-              Opens www.roomforstay.com
+              {internetConnected
+                ? 'Opening www.roomforstay.com...'
+                : 'Tap to enable internet & open RoomForStay'}
             </Text>
           </View>
           <View style={styles.ctaArrowCircle}>
-            <Ionicons name="arrow-forward" size={20} color={COLORS.navyPrimary} />
+            <Ionicons
+              name={internetConnected ? 'arrow-forward' : 'wifi-outline'}
+              size={20}
+              color={COLORS.navyPrimary}
+            />
           </View>
         </TouchableOpacity>
 
         <View style={styles.secondaryFooterRow}>
-          <Ionicons name="location-outline" size={13} color={COLORS.goldPrimary} />
+          <Ionicons name="globe-outline" size={13} color={COLORS.goldPrimary} />
           <Text style={styles.secondaryText}>{BRAND_CONFIG.secondaryText}</Text>
         </View>
       </View>

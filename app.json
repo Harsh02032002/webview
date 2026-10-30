@@ -18,12 +18,10 @@
     },
     "android": {
       "package": "com.roomforstay.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_NETWORK_STATE"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0F2547",
@@ -44,12 +42,6 @@
           "backgroundColor": "#0F2547",
           "image": "./assets/splash-icon.png",
           "imageWidth": 180
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow RoomForStay to access your location to find nearby hotels and stays."
         }
       ],
       [
